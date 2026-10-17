@@ -1,3 +1,15 @@
+import extraPreset0 from "../../../presets/backup-freshness.json";
+import extraPreset1 from "../../../presets/storage-health.json";
+import extraPreset2 from "../../../presets/ssh-login-audit.json";
+import extraPreset3 from "../../../presets/kernel-errors.json";
+import extraPreset4 from "../../../presets/password-expiry.json";
+import extraPreset5 from "../../../presets/log-growth.json";
+import extraPreset6 from "../../../presets/docker-cleanup.json";
+import extraPreset7 from "../../../presets/listening-ports.json";
+import extraPreset8 from "../../../presets/cron-failures.json";
+import extraPreset9 from "../../../presets/read-only-mounts.json";
+import extraPreset10 from "../../../presets/kubernetes-health.json";
+import extraPreset11 from "../../../presets/gpu-health.json";
 import certExpiryWeekly from "../../../presets/cert-expiry-weekly.json";
 import containerAnomaly from "../../../presets/container-anomaly.json";
 import dailyPatrol from "../../../presets/daily-patrol.json";
@@ -41,6 +53,18 @@ export const PRESETS = [
   resourceOverloadMemory,
   securityUpdatesWeekly,
   certExpiryWeekly,
+  extraPreset0,
+  extraPreset1,
+  extraPreset2,
+  extraPreset3,
+  extraPreset4,
+  extraPreset5,
+  extraPreset6,
+  extraPreset7,
+  extraPreset8,
+  extraPreset9,
+  extraPreset10,
+  extraPreset11,
 ] as PresetDefinition[];
 
 export function findPreset(id: string): PresetDefinition | undefined {

@@ -4,14 +4,7 @@ import { Button, InlineView, ListBadge } from "@termix-ssh/plugin-sdk/ui";
 import { ShieldCheck } from "lucide-react";
 import { AiMessage } from "../AiMessage";
 import { formatTokens } from "../usage/format";
-import {
-  apiMessage,
-  approveTask,
-  getTask,
-  rejectTask,
-  type PlanHost,
-  type TaskDetail,
-} from "./api";
+import { apiMessage, getTask, type PlanHost, type TaskDetail } from "./api";
 import { SeverityBadge, StatusBadge } from "./badges";
 
 /** How often a task that is still moving is read again. */
@@ -114,7 +107,6 @@ export function TaskDetailView({
   const { t } = useTranslation();
   const [task, setTask] = useState<TaskDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -133,20 +125,6 @@ export function TaskDetailView({
     const timer = setInterval(() => void load(), POLL_MS);
     return () => clearInterval(timer);
   }, [task, load]);
-
-  const decide = async (approve: boolean) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await (approve ? approveTask(taskId) : rejectTask(taskId));
-      await load();
-      onChanged();
-    } catch (err) {
-      setError(apiMessage(err, t("autoOps.decideFailed")));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const hostName = (id: number) => task?.hostNames[String(id)] ?? `#${id}`;
 
@@ -211,32 +189,6 @@ export function TaskDetailView({
                     name={hostName(host.hostId)}
                   />
                 ))}
-                {task.status === "proposed" && task.canDecide && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => void decide(true)}
-                    >
-                      {t("autoOps.approve")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => void decide(false)}
-                    >
-                      {t("autoOps.reject")}
-                    </Button>
-                    {task.expiresAt && (
-                      <span className="text-[11px] text-muted-foreground">
-                        {t("autoOps.expires", {
-                          time: new Date(task.expiresAt).toLocaleString(),
-                        })}
-                      </span>
-                    )}
-                  </div>
-                )}
               </div>
             )}
             {task.report && (

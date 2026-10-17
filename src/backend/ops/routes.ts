@@ -1,3 +1,4 @@
+import type { Confirmations } from "../confirmations/manager.js";
 import { existsSync } from "node:fs";
 import type { Request, Response, Router } from "express";
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
@@ -109,6 +110,7 @@ export function registerOpsRoutes(
   repository: AiRepository,
   ctx: PluginContext,
   modelInfo: ModelInfoCache,
+  confirmations?: Confirmations,
 ): void {
   const gate = createAiGate(ctx.settings, () => ctx.currentActor());
   router.use("/ops", ctx.rbac.require("use") as never, gate as never);
@@ -722,6 +724,20 @@ export function registerOpsRoutes(
       const cliPath = bundledCliPath();
       const ownId = conversation.id;
       const session: AssistantSession = {
+        confirm: confirmations?.scoped({
+          userId,
+          conversationId: ownId,
+          signal: current.signal,
+          onExpired: () => {
+            void runs.stop(ownId);
+          },
+          onUnavailable: () => {
+            void runs.stop(ownId);
+          },
+          onCancelled: () => {
+            void runs.stop(ownId);
+          },
+        }),
         hostShell,
         targets,
         limits,

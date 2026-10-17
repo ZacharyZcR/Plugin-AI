@@ -1,3 +1,4 @@
+import { CommandConfirmations } from "./CommandConfirmations";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useHosts, useTranslation } from "@termix-ssh/plugin-sdk/frontend";
 import {
@@ -462,6 +463,7 @@ export function AssistantChat({ actions }: { actions?: ReactNode }) {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <CommandConfirmations />
       <div className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
         {state.providers.length > 0 ? (
           <Select

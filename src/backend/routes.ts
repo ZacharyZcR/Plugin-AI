@@ -1066,6 +1066,10 @@ export function registerAiRoutes(
         const stored = await repository.findProposal(id, userId);
         if (!stored)
           return res.status(404).json({ error: "Proposal not found" });
+        if (stored.kind === "command_confirmation")
+          return res
+            .status(409)
+            .json({ error: "Use the command confirmation decision endpoint" });
         if (stored.status !== "pending") {
           return res
             .status(400)
@@ -1254,6 +1258,11 @@ export function registerAiRoutes(
       if (!id) return res.status(400).json({ error: "Invalid proposal id" });
 
       try {
+        const stored = await repository.findProposal(id, actor(ctx));
+        if (stored?.kind === "command_confirmation")
+          return res
+            .status(409)
+            .json({ error: "Use the command confirmation decision endpoint" });
         const updated = await repository.setProposalStatus(
           id,
           actor(ctx),

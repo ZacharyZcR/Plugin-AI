@@ -1,0 +1,15 @@
+{
+  "id": "listening-ports",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "0 */6 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inventory TCP and UDP listeners with bind address and process. Compare with retained prior evidence when available; otherwise report this as a baseline and do not invent changes. Flag unexpected public listeners. Do not change firewall or services. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

@@ -83,7 +83,12 @@ export interface Preset {
   hostSelector: HostSelector;
   maxRunSeconds: number;
   runbook: string;
-  enabled: Array<{ automationId: number; version: number; name: string }>;
+  enabled: Array<{
+    automationId: number;
+    version: number;
+    name: string;
+    active?: boolean;
+  }>;
   updateAvailable: boolean;
   /** Saved presets only. */
   name?: string;
@@ -186,4 +191,11 @@ export async function savePreferences(
   changes: Partial<TaskPreferences>,
 ): Promise<TaskPreferences> {
   return (await api().put("tasks/preferences", changes)).data.preferences;
+}
+
+export async function initializePresets() {
+  await api().post("/tasks/presets/initialize");
+}
+export async function setPresetEnabled(id: number, enabled: boolean) {
+  await api().post(`/tasks/presets/automations/${id}/state`, { enabled });
 }

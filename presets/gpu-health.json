@@ -1,0 +1,15 @@
+{
+  "id": "gpu-health",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "30 */2 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect GPU temperatures, utilization, memory, ECC errors, Xid events and driver availability. Distinguish an idle GPU from a fault. Report thresholds and errors without resetting GPUs or stopping workloads. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

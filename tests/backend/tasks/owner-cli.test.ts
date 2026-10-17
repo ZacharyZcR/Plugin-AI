@@ -137,7 +137,7 @@ describe("the Termix CLI in tasks", () => {
     expect(result.status).toBe("reported");
     expect(toolNames(model)).toContain("termix");
     expect(model.bodies[0].messages[0].content).toContain(
-      "read-only CLI commands",
+      "same command confirmation policy",
     );
 
     expect(issue).toHaveBeenCalledTimes(2);
@@ -176,10 +176,23 @@ describe("the Termix CLI in tasks", () => {
       submit(),
     );
     const { server, issue, envs } = await start(model, { issue: true });
-    await runTask(server, taskInput({ autonomy: "propose" }));
+    const running = runTask(server, taskInput({ autonomy: "propose" }));
+    for (let index = 0; index < 2; index++) {
+      let pending: { id: number }[] = [];
+      await vi.waitFor(async () => {
+        pending = (await server.request("GET", "/confirmations")).body
+          .confirmations;
+        expect(pending.length).toBeGreaterThan(0);
+      });
+      expect(issue).not.toHaveBeenCalled();
+      await server.request("POST", `/confirmations/${pending[0].id}/decision`, {
+        body: { approved: false },
+      });
+    }
+    await running;
 
     const refusals = toolResults(server).filter((content) =>
-      content.includes("Refused"),
+      content.includes("rejected"),
     );
     expect(refusals).toHaveLength(2);
     expect(issue).not.toHaveBeenCalled();

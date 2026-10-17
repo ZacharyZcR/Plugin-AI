@@ -295,7 +295,14 @@ export async function createTaskRepository(ctx: Pick<PluginContext, "db">) {
       )
         .select({ id: runs.id })
         .from(runs)
-        .where(inArray(runs.status, ["running", "approved", "executing"]));
+        .where(
+          inArray(runs.status, [
+            "running",
+            "proposed",
+            "approved",
+            "executing",
+          ]),
+        );
       if (!stale.length) return 0;
       await (
         await client()

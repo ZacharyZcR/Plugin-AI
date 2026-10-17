@@ -1,3 +1,6 @@
+vi.mock("../../src/frontend/assistant/CommandConfirmations", () => ({
+  CommandConfirmations: () => null,
+}));
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
   cleanup,
@@ -19,6 +22,8 @@ const mocks = vi.hoisted(() => ({
   savePreferences: vi.fn(),
 }));
 vi.mock("../../src/frontend/autoops/api", () => ({
+  initializePresets: vi.fn(async () => {}),
+  setPresetEnabled: vi.fn(async () => {}),
   apiMessage: (_error: unknown, fallback: string) => fallback,
   listTasks: mocks.listTasks,
   getTask: mocks.getTask,
@@ -142,7 +147,7 @@ it("opens a task's report and its conversation in the assistant", async () => {
   expect(open).toHaveBeenCalledWith(12);
 });
 
-it("shows a plan waiting for approval and approves it", async () => {
+it("shows a historical plan without offering execution", async () => {
   const proposed = task({
     id: 2,
     status: "proposed",
@@ -176,8 +181,8 @@ it("shows a plan waiting for approval and approves it", async () => {
   expect(await screen.findByText("docker image prune -f")).toBeTruthy();
   expect(screen.getByText("2G dangling")).toBeTruthy();
   expect(screen.getByText("docker system df")).toBeTruthy();
-  fireEvent.click(screen.getByText("autoOps.approve"));
-  await waitFor(() => expect(mocks.approveTask).toHaveBeenCalledWith(2));
+  expect(screen.queryByText("autoOps.approve")).toBeNull();
+  expect(mocks.approveTask).not.toHaveBeenCalled();
 });
 
 it("marks presets as needing Automations when it is missing", async () => {

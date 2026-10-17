@@ -1,3 +1,5 @@
+import { initializePresets, setPresetEnabled } from "./api";
+import { CommandConfirmations } from "../assistant/CommandConfirmations";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "@termix-ssh/plugin-sdk/frontend";
 import {
@@ -31,7 +33,7 @@ import { EnablePresetView, usePresetTitle } from "./EnablePresetView";
 import { useReportLanguage } from "./report-language";
 import { TaskDetailView } from "./TaskDetailView";
 
-type Section = "presets" | "tasks" | "approvals";
+type Section = "presets" | "tasks";
 
 /** How often the lists are read again while the view is open. */
 const REFRESH_MS = 15_000;
@@ -151,13 +153,29 @@ function PresetRow({
   available,
   onEnable,
   onDelete,
+  onChanged,
 }: {
   preset: Preset;
   available: boolean;
   onEnable: () => void;
   onDelete?: () => void;
+  onChanged: () => void;
 }) {
   const { t } = useTranslation();
+  const [changing, setChanging] = useState(false);
+  const [toggleError, setToggleError] = useState("");
+  const toggle = async (id: number, enabled: boolean) => {
+    setChanging(true);
+    setToggleError("");
+    try {
+      await setPresetEnabled(id, enabled);
+      onChanged();
+    } catch (error) {
+      setToggleError(apiMessage(error, t("autoOps.loadFailed")));
+    } finally {
+      setChanging(false);
+    }
+  };
   const title = usePresetTitle()(preset);
   const description =
     preset.description ??
@@ -170,7 +188,7 @@ function PresetRow({
           <ListBadge tone="muted">
             {t(`autoOps.autonomy.${preset.autonomy}`)}
           </ListBadge>
-          {preset.enabled.length > 0 && (
+          {preset.enabled.some((entry) => entry.active) && (
             <ListBadge tone="success">{t("autoOps.enabled")}</ListBadge>
           )}
           {preset.updateAvailable && (
@@ -199,18 +217,32 @@ function PresetRow({
         ) : undefined
       }
       trailing={
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={!available}
-          onClick={onEnable}
-        >
-          {preset.enabled.length
-            ? t("autoOps.enableAgain")
-            : t("autoOps.enable.submit")}
-        </Button>
+        <div className="flex gap-2">
+          {preset.enabled.map((entry) => (
+            <Button
+              key={entry.automationId}
+              size="sm"
+              variant="outline"
+              disabled={changing || !available}
+              onClick={() => void toggle(entry.automationId, !entry.active)}
+            >
+              {entry.active ? t("autoOps.disable") : t("autoOps.enable.submit")}
+            </Button>
+          ))}
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!available}
+            onClick={onEnable}
+          >
+            {preset.enabled.length
+              ? t("autoOps.configure")
+              : t("autoOps.enable.submit")}
+          </Button>
+        </div>
       }
     >
+      {toggleError && <p role="alert">{toggleError}</p>}
       {description && (
         <p className="text-xs text-muted-foreground">{description}</p>
       )}
@@ -231,7 +263,6 @@ export function AutoOpsView({
   useReportLanguage();
   const [section, setSection] = useState<Section>("tasks");
   const [tasks, setTasks] = useState<TaskItem[]>([]);
-  const [approvals, setApprovals] = useState<TaskItem[]>([]);
   const [presets, setPresets] = useState<PresetList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openTask, setOpenTask] = useState<number | null>(null);
@@ -242,7 +273,6 @@ export function AutoOpsView({
     try {
       const next = await listTasks();
       setTasks(next.tasks);
-      setApprovals(next.approvals);
       return next;
     } catch (err) {
       setError(apiMessage(err, t("autoOps.loadFailed")));
@@ -259,7 +289,9 @@ export function AutoOpsView({
   }, [t]);
 
   useEffect(() => {
-    void loadPresets();
+    void initializePresets()
+      .then(loadPresets)
+      .catch((err) => setError(apiMessage(err, t("autoOps.loadFailed"))));
     void loadTasks().then((next) => {
       if (!next || !first) return;
       setFirst(false);
@@ -269,7 +301,7 @@ export function AutoOpsView({
       if (unseen) setOpenTask(unseen.id);
       if (!next.tasks.length && !next.approvals.length) setSection("presets");
       else if (next.approvals.some((task) => task.status === "proposed")) {
-        setSection("approvals");
+        setSection("tasks");
       }
       localStorage.setItem(SEEN_KEY, String(Date.now()));
     });
@@ -278,10 +310,9 @@ export function AutoOpsView({
     // Only on mount; first guards the jump.
   }, []);
 
-  const pending = approvals.filter((task) => task.status === "proposed").length;
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <CommandConfirmations />
       <PreferencesRow />
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
         <Segmented
@@ -289,11 +320,6 @@ export function AutoOpsView({
           onChange={(next) => setSection(next as Section)}
           options={[
             { value: "tasks", label: t("autoOps.sections.tasks") },
-            {
-              value: "approvals",
-              label: t("autoOps.sections.approvals"),
-              count: pending || undefined,
-            },
             { value: "presets", label: t("autoOps.sections.presets") },
           ]}
         />
@@ -323,21 +349,6 @@ export function AutoOpsView({
             ))}
           </PanelList>
         )}
-        {section === "approvals" && (
-          <PanelList
-            empty={
-              <EmptyState icon={ShieldCheck} title={t("autoOps.noApprovals")} />
-            }
-          >
-            {approvals.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                onOpen={() => setOpenTask(task.id)}
-              />
-            ))}
-          </PanelList>
-        )}
         {section === "presets" && presets && (
           <PanelList>
             {[...presets.presets, ...presets.custom].map((preset) => (
@@ -345,6 +356,7 @@ export function AutoOpsView({
                 key={preset.id}
                 preset={preset}
                 available={presets.automationsAvailable}
+                onChanged={() => void loadPresets()}
                 onEnable={() => setEnabling(preset)}
                 onDelete={
                   preset.mine

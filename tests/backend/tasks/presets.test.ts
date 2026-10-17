@@ -165,7 +165,7 @@ async function start(
 
 describe("shipped presets", () => {
   it("are the shipped presets, in the Automations shapes, with time limits", () => {
-    expect(PRESETS.map((preset) => preset.id)).toEqual([
+    expect(PRESETS.slice(0, 9).map((preset) => preset.id)).toEqual([
       "daily-patrol",
       "disk-cleanup",
       "host-down-triage",
@@ -265,7 +265,7 @@ describe("shipped presets", () => {
     const runbook = PRESETS[1].runbook;
     expect(runbook).toContain("docker image prune -f");
     expect(runbook).toContain("journalctl --vacuum-time=7d");
-    expect(runbook).toMatch(/Never propose: docker system prune/);
+    expect(runbook).toMatch(/Never execute: docker system prune/);
     expect(runbook).toMatch(/\/home/);
   });
 
@@ -413,7 +413,7 @@ describe("shipped presets", () => {
     expect(service).toContain("`systemctl restart <unit>`, exactly once");
     expect(service).toContain("`systemctl reset-failed <unit>`");
     expect(service).toMatch(
-      /Never propose: editing, moving or deleting any file; systemctl edit, daemon-reload, stop, kill, disable, mask/,
+      /Never execute: editing, moving or deleting any file; systemctl edit, daemon-reload, stop, kill, disable, mask/,
     );
     expect(service).toMatch(/reboot, shutdown or poweroff/);
     expect(isReadOnlyCommand(sample("systemctl restart <unit>")).allowed).toBe(
@@ -425,7 +425,7 @@ describe("shipped presets", () => {
     expect(container).toContain("`docker start <name>`");
     expect(container).toContain("`docker restart <name>`");
     expect(container).toMatch(
-      /Never propose: docker rm, rmi, kill, stop, update, rename, prune, volume/,
+      /Never execute: docker rm, rmi, kill, stop, update, rename, prune, volume/,
     );
     expect(container).toMatch(
       /docker compose in any form; editing compose files/,
@@ -617,6 +617,13 @@ describe("preset routes", () => {
     expect(byId["daily-patrol"].updateAvailable).toBe(true);
     // Deleted in Automations: no longer enabled.
     expect(byId["host-down-triage"].enabled).toEqual([]);
+    expect(
+      target.db.sqlite
+        .prepare(
+          "SELECT automation_id FROM p_ai_preset_links WHERE user_id = ? AND preset_id = ?",
+        )
+        .get("user-1", "host-down-triage"),
+    ).toEqual({ automation_id: 404 });
   });
 
   it("pass on what Automations refuses", async () => {

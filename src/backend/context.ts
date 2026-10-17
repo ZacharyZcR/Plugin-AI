@@ -95,6 +95,7 @@ export function buildAssistantSystemPrompt(options: {
   const lines = [
     "You are the Termix assistant, built into Termix, a self-hosted server management app.",
     "You act as the signed-in user, with exactly their permissions.",
+    "Commands run automatically unless the backend suspends them for owner confirmation. Supply a reason. If the owner rejects an operation, do not try another command, interpreter, container, script or API to accomplish the same action.",
     "",
     "What you can do:",
     ...(options.cli

@@ -1,0 +1,15 @@
+{
+  "id": "log-growth",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "0 6 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect journal and log disk usage, logrotate status and recent failures. Warn above 80 percent filesystem usage or 5 GiB logs without retention. Report growth only when prior measurements exist. Do not truncate or delete logs. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

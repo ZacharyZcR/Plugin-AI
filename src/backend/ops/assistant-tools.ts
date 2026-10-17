@@ -1,3 +1,5 @@
+import { cliRisk } from "../confirmations/policy.js";
+import { DENIED_COMMAND } from "../confirmations/manager.js";
 import type { CliRunInput } from "../repository.js";
 import { readService, SERVICE } from "../services.js";
 import {
@@ -71,7 +73,13 @@ function cliFailure(result: Awaited<ReturnType<typeof runCli>>) {
 /** What the termix tool needs: the assistant's session, or a task's. */
 export type CliSession = Pick<
   AssistantSession,
-  "hostShell" | "signal" | "recordCliRun" | "auditDetails" | "limits"
+  | "hostShell"
+  | "signal"
+  | "recordCliRun"
+  | "auditDetails"
+  | "limits"
+  | "confirm"
+  | "mode"
 >;
 
 export function termixTool(session: CliSession, cli: CliTarget): AiTool {
@@ -87,11 +95,12 @@ export function termixTool(session: CliSession, cli: CliTarget): AiTool {
           description:
             "The CLI arguments, one word per item. No shell quoting.",
         },
+        reason: str("Why this operation is needed"),
         timeoutSec: num(
           `Seconds before the CLI is stopped (default ${CLI_TIMEOUT_SEC})`,
         ),
       },
-      ["args"],
+      ["args", "reason"],
     ),
     handler: async (raw, context) => {
       if (!Array.isArray(raw.args)) {
@@ -100,6 +109,21 @@ export function termixTool(session: CliSession, cli: CliTarget): AiTool {
       const args = raw.args.map(String);
       const problem = checkCliArgs(args, session.hostShell);
       if (problem) return { error: problem };
+      const risk = cliRisk(args, session.mode);
+      if (risk) {
+        if (!session.confirm)
+          return { error: "Command confirmation is unavailable" };
+        if (
+          !(await session.confirm({
+            args,
+            hostIds: [],
+            reason: String(raw.reason ?? "No reason provided"),
+            risk,
+          }))
+        )
+          return DENIED_COMMAND;
+      }
+      if (session.signal.aborted) return { error: "Run stopped" };
       const result = await runCli(cli, args, {
         timeoutMs: timeoutFor(raw.timeoutSec, CLI_TIMEOUT_SEC) * 1000,
         outputLimit: Math.max(

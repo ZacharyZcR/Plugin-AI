@@ -1,0 +1,15 @@
+{
+  "id": "cron-failures",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "15 8 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect cron logs and systemd timers for failed, missed or overlapping jobs over 24 hours. Report expected versus observed executions where schedules are available. Do not edit schedules or rerun jobs. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

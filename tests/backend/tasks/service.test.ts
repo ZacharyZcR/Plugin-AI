@@ -212,15 +212,81 @@ describe("ai.tasks service", () => {
       submit(),
     );
     const { server, ssh } = await start(model);
-    await runTask(server, taskInput());
+    const running = runTask(server, taskInput());
+    for (let index = 0; index < 2; index++) {
+      let pending: { id: number }[] = [];
+      await vi.waitFor(async () => {
+        pending = (await server.request("GET", "/confirmations")).body
+          .confirmations;
+        expect(pending.length).toBeGreaterThan(0);
+      });
+      expect(ssh.channels).toHaveLength(0);
+      await server.request("POST", `/confirmations/${pending[0].id}/decision`, {
+        body: { approved: false },
+      });
+    }
+    await running;
 
     expect(ssh.channels).toHaveLength(0);
     const refusals = model.bodies[2].messages.filter(
       (message) => message.role === "tool",
     );
     expect(refusals.map((message) => message.content).join()).toMatch(
-      /Refused.*Refused/s,
+      /rejected.*rejected/s,
     );
+  });
+
+  it("suspends the model, only lets the owner confirm, and excludes waiting from its deadline", async () => {
+    const model = scriptedModel(
+      ["run_command", { command: "reboot", reason: "Kernel update" }],
+      submit(),
+    );
+    const { server, ssh } = await start(model);
+    const waited = vi.fn();
+    const running = runTask(
+      server,
+      taskInput({
+        autonomy: "propose",
+        deadlineAt: Date.now() + 1000,
+        onConfirmationWait: waited,
+      }),
+    );
+    let pending: { id: number }[] = [];
+    await vi.waitFor(async () => {
+      pending = (await server.request("GET", "/confirmations")).body
+        .confirmations;
+      expect(pending.length).toBe(1);
+    });
+    const id = pending[0].id;
+    await server.enableFor("user-2");
+    const wrongOwner = await server.request(
+      "POST",
+      `/confirmations/${id}/decision`,
+      { user: "user-2", body: { approved: true } },
+    );
+    expect(wrongOwner.status).toBe(404);
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(model.bodies).toHaveLength(1);
+    expect(ssh.channels).toHaveLength(0);
+    const approved = await server.request(
+      "POST",
+      `/confirmations/${id}/decision`,
+      { body: { approved: true, command: "rm -rf /" } },
+    );
+    expect(approved.status).toBe(200);
+    expect((await running).status).toBe("reported");
+    expect(ssh.channels).toHaveLength(1);
+    expect(ssh.channels[0].command).toContain("reboot");
+    expect(ssh.channels[0].command).not.toContain("rm -rf");
+    expect(waited).toHaveBeenCalledOnce();
+    expect(waited.mock.calls[0][0]).toBeGreaterThanOrEqual(1100);
+    expect(
+      (
+        await server.request("POST", `/confirmations/${id}/decision`, {
+          body: { approved: true },
+        })
+      ).status,
+    ).toBe(404);
   });
 
   it("writes the report in the owner's language", async () => {
@@ -236,41 +302,17 @@ describe("ai.tasks service", () => {
     );
   });
 
-  it("proposes a plan at L1 and leaves it waiting for approval", async () => {
-    const plan = {
-      summary: "Clean caches",
-      hosts: [
-        {
-          hostId: 1,
-          commands: ["apt-get clean", "journalctl --vacuum-time=7d"],
-          rationale: "Caches use 4G",
-          risk: "Low",
-          rollback: "None needed",
-          verify: ["df -hP /"],
-        },
-      ],
-    };
-    const model = scriptedModel(["propose_plan", plan], submit("warning"));
+  it("executes ordinary L1 changes and reports without a plan approval", async () => {
+    const model = scriptedModel(
+      ["run_command", { command: "apt-get clean" }],
+      submit("warning"),
+    );
     const { server, ssh } = await start(model);
-
     const result = await runTask(server, taskInput({ autonomy: "propose" }));
-    expect(result.status).toBe("proposed");
-    expect(toolNames(model.bodies[0])).toContain("propose_plan");
-    // Proposing runs nothing.
-    expect(ssh.channels).toHaveLength(0);
-    const [row] = taskRows(server);
-    expect(row.status).toBe("proposed");
-    expect(JSON.parse(String(row.plan))[0]).toMatchObject({
-      hostId: 1,
-      commands: ["apt-get clean", "journalctl --vacuum-time=7d"],
-      verify: ["df -hP /"],
-    });
-    const expires = Date.parse(String(row.expires_at)) - Date.now();
-    expect(expires).toBeGreaterThan(23 * 3600_000);
-    expect(server.mock.notifications.at(-1)?.notification).toMatchObject({
-      category: "ai.task_proposed",
-      title: "AI plan awaiting approval: Disk check",
-    });
+    expect(result.status).toBe("reported");
+    expect(toolNames(model.bodies[0])).not.toContain("propose_plan");
+    expect(ssh.channels).toHaveLength(1);
+    expect(taskRows(server)[0].status).toBe("reported");
   });
 
   it("forces a dry run to report, without propose_plan or notifications", async () => {
@@ -437,10 +479,10 @@ describe("ai.tasks guardrails", () => {
     const { createTaskRepository } =
       await import("../../../src/backend/tasks/repository.js");
     const tasks = await createTaskRepository(server.mock.ctx);
-    expect(await tasks.failInterrupted()).toBe(1);
+    expect(await tasks.failInterrupted()).toBe(2);
     expect(taskRows(server).map((row) => row.status)).toEqual([
       "failed",
-      "proposed",
+      "failed",
     ]);
   });
 });

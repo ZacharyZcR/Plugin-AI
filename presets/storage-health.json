@@ -1,0 +1,15 @@
+{
+  "id": "storage-health",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "0 7 * * 0"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect SMART health, RAID degradation, ZFS errors and last completed scrub. Report failed disks, pending sectors, degraded arrays and scrubs older than 30 days. Do not start tests, scrubs, repairs or replace disks. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

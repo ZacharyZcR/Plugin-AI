@@ -1,0 +1,15 @@
+{
+  "id": "ssh-login-audit",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "30 8 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect SSH authentication logs for the last 24 hours. Report brute-force bursts and unusual successful logins with evidence. Never print keys, change accounts or block addresses. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

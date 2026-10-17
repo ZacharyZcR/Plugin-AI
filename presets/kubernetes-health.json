@@ -1,0 +1,15 @@
+{
+  "id": "kubernetes-health",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "0 */2 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect node readiness, pressure, pod restarts, pending workloads, storage and recent warnings. Report unhealthy resources with namespace and evidence. Do not delete, drain, scale or patch. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

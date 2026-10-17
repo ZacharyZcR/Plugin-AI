@@ -92,6 +92,10 @@ export function parseTaskInput(
           ? deadlineAt
           : Date.now() + DEFAULT_RUN_MS,
       signal: raw.signal instanceof AbortSignal ? raw.signal : undefined,
+      onConfirmationWait:
+        typeof raw.onConfirmationWait === "function"
+          ? (raw.onConfirmationWait as (ms: number) => void)
+          : undefined,
     },
   };
 }

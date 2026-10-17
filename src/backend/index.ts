@@ -1,3 +1,5 @@
+import { createPresetSeeder } from "./tasks/seed.js";
+import { createConfirmations } from "./confirmations/manager.js";
 import type { Router } from "express";
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
 import { hostImportNormalizer } from "./host-import.js";
@@ -22,16 +24,32 @@ export async function activate(ctx: PluginContext) {
   await registerProviderSync(ctx, repository);
 
   const router = ctx.http.router<Router>();
+  const confirmations = createConfirmations(ctx, repository);
+  await confirmations.recover();
+  confirmations.mount(router);
+  ctx.disposables.add(() => confirmations.close());
   // Shared, so a refresh in settings reaches the chat too.
   const modelInfo = createModelInfoCache();
   registerAiRoutes(router, repository, ctx, modelInfo);
   registerAgentRoutes(router, repository, ctx, await createAgentStore(ctx));
-  registerOpsRoutes(router, repository, ctx, modelInfo);
+  registerOpsRoutes(router, repository, ctx, modelInfo, confirmations);
   registerUsageRoutes(router, repository, ctx);
 
   // Auto-ops: the ai.tasks service Automations calls, and its routes.
   const tasks = await createTaskRepository(ctx);
   await tasks.failInterrupted();
+  const seedPresets = createPresetSeeder(ctx, tasks);
+  ctx.schedule.every(
+    60_000,
+    async () => {
+      for (const { id: userId } of await ctx.hosts.listUsers()) {
+        await seedPresets(userId).catch((error) =>
+          ctx.log.warn(`Preset initialization failed: ${error}`),
+        );
+      }
+    },
+    { runNow: true },
+  );
   const running: RunningTasks = new Map();
   const toolDeps = {
     hosts: ctx.hosts,
@@ -48,8 +66,15 @@ export async function activate(ctx: PluginContext) {
     modelInfo,
     toolDeps,
     running,
+    confirmations,
   });
-  registerTaskRoutes(router, ctx, { repository, tasks, toolDeps, running });
+  registerTaskRoutes(router, ctx, {
+    repository,
+    tasks,
+    toolDeps,
+    running,
+    seedPresets,
+  });
   ctx.services.provide("ai.tasks", taskService.service);
   ctx.schedule.every(
     EXPIRY_CHECK_MS,

@@ -572,6 +572,19 @@ export async function createAiRepository(
 
     // --- proposals ---
 
+    async pendingConfirmations(userId?: string): Promise<AiProposalRecord[]> {
+      return (await client())
+        .select()
+        .from(proposals)
+        .where(
+          and(
+            eq(proposals.kind, "command_confirmation"),
+            eq(proposals.status, "pending"),
+            ...(userId ? [eq(proposals.userId, userId)] : []),
+          ),
+        );
+    },
+
     async listProposals(
       userId: string,
       conversationId: number,

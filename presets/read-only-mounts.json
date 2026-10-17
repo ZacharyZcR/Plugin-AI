@@ -1,0 +1,15 @@
+{
+  "id": "read-only-mounts",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "0 */4 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect mounts and kernel filesystem errors. Report filesystems unexpectedly remounted read-only, distinguish intentionally read-only mounts and container layers. Do not remount or repair. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

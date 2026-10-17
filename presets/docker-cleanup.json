@@ -1,0 +1,15 @@
+{
+  "id": "docker-cleanup",
+  "version": 1,
+  "autonomy": "propose",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "0 3 * * 0"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inventory Docker disk usage and references. Clean only demonstrably unused images with bounded commands, then verify reclaimed space. Treat every volume deletion as destructive: explain candidates and require the command confirmation gate. Never remove running containers or use privileged containers. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations.\n\nExecution policy: investigate, apply the requested bounded fixes using run_command, then verify. Do not wait for plan approval. Only the command confirmation gate pauses execution. Never bypass a denied command."
+}
