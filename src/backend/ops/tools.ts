@@ -1,3 +1,8 @@
+import { commandRisk, type CommandMode } from "../confirmations/policy.js";
+import {
+  DENIED_COMMAND,
+  type ConfirmCommand,
+} from "../confirmations/manager.js";
 import type { OpsRunInput } from "../repository.js";
 import { toHostSummary } from "../tools/host-summary.js";
 import {
@@ -43,6 +48,8 @@ export interface HostResult extends ExecOutcome {
 }
 
 export interface OpsSession {
+  confirm?: ConfirmCommand;
+  mode?: CommandMode;
   /** The conversation's target host ids. */
   targets: number[];
   limits: OpsLimits;
@@ -264,27 +271,54 @@ export function createOpsTools(session: OpsSession): AiTool[] {
           command: str(
             "The shell command. It runs without a terminal, so nothing may wait for input.",
           ),
+          reason: str("Why this command is needed"),
           timeoutSec: num(
             `Seconds before the command is stopped (default set by the admin, at most ${MAX_TIMEOUT_SEC})`,
           ),
         },
-        ["command"],
+        ["command", "reason"],
       ),
       handler: async (args, context) => {
-        const command =
-          typeof args.command === "string" ? args.command.trim() : "";
-        if (!command) return { error: "command is required" };
+        const command = typeof args.command === "string" ? args.command : "";
+        if (!command.trim()) return { error: "command is required" };
         const scope = resolveScope(args.hostIds, session.targets);
         if ("error" in scope) return scope;
 
+        const hostIds = [...scope.hostIds];
+        const timeoutSec = timeoutFor(
+          args.timeoutSec,
+          session.limits.timeoutSec,
+        );
+        const names = await hostNames(context);
+        const risk = commandRisk(command, session.mode);
+        if (risk) {
+          if (!session.confirm)
+            return { error: "Command confirmation is unavailable" };
+          if (
+            !(await session.confirm({
+              command,
+              hostIds,
+              hosts: hostIds.map((id) => ({
+                id,
+                name: names.get(id) ?? `#${id}`,
+              })),
+              reason: String(args.reason ?? "No reason provided"),
+              risk,
+            }))
+          )
+            return DENIED_COMMAND;
+        }
+        if (session.signal.aborted) return { error: "Run stopped" };
+        if (risk && !(await context.deps.rbac.has("ops.use")))
+          return { error: "Host execution permission was revoked" };
         const results = await fanOut(
           session,
           context,
           "run_command",
           command,
-          scope.hostIds,
-          timeoutFor(args.timeoutSec, session.limits.timeoutSec),
-          await hostNames(context),
+          hostIds,
+          timeoutSec,
+          names,
         );
         return summarize(
           command,

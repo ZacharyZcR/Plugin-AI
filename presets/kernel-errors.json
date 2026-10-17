@@ -1,0 +1,15 @@
+{
+  "id": "kernel-errors",
+  "version": 1,
+  "autonomy": "report",
+  "trigger": {
+    "kind": "schedule",
+    "cron": "0 8 * * *"
+  },
+  "hostSelector": {
+    "kind": "all"
+  },
+  "concurrencyPolicy": "skip",
+  "maxRunSeconds": 1800,
+  "runbook": "Inspect the last 24 hours of kernel logs for OOM kills, I/O errors, hung tasks and filesystem errors. Correlate affected services and report impact. Do not restart or kill processes. Skip unsupported platforms and state coverage gaps. Use readable commands; never evade a refusal. Finish with evidence, actions taken and recommendations."
+}

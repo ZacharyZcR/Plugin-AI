@@ -2,7 +2,7 @@
   "id": "ai",
   "name": "AI Assistant",
   "version": "1.0.2",
-  "description": "An AI assistant that reads your setup and proposes changes for you to approve.",
+  "description": "An assistant for host operations, with automatic execution and owner confirmation for risky commands.",
   "author": {
     "name": "Termix"
   },
@@ -14,14 +14,14 @@
   "icon": "Sparkles",
   "features": [
     "Ask about your hosts, snippets, fleets, alerts, automations and more",
-    "Proposes changes instead of making them, and nothing runs until you approve it",
+    "Suspends risky assistant commands for their owner to confirm or reject",
     "Can run safe read-only commands like df and uptime if you allow it",
     "Ask about a host right from its terminal",
     "Works with Ollama, Anthropic, OpenAI, Google Gemini and any OpenAI compatible endpoint",
     "Run Pi, OpenCode, Claude Code or Codex as a coding agent on an SSH host, using your own provider",
     "One AI assistant, floating on every page or full screen in the AI tab, that manages Termix as you through the bundled Termix CLI and opens views for you",
     "With the ai.ops.use permission, it also runs shell commands across the hosts, folders, tags or fleets you select",
-    "Auto-ops: automations start the assistant to investigate and report, or propose a plan you approve, with ready-made presets"
+    "Auto-ops: automations start the assistant to investigate and report, or execute and verify fixes with command confirmation, with ready-made presets"
   ],
   "engine": {
     "termix": ">=26.10.0",

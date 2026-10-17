@@ -46,6 +46,7 @@ function setup(cli: CliTarget | null = null, hostShell = true) {
   const cliRuns: CliRunInput[] = [];
   const session: AssistantSession = {
     hostShell,
+    confirm: async () => true,
     targets: [1],
     limits: { concurrency: 4, timeoutSec: 30, outputLimit: 4000 },
     signal: new AbortController().signal,
@@ -169,6 +170,37 @@ describe("termix", () => {
       }),
     );
     expect(JSON.stringify(mock.audits)).not.toContain("hunter2");
+  });
+
+  it("waits before CLI execution and resumes once with the original secret arguments", async () => {
+    const run = vi.fn(spawnRun);
+    const { session, call } = setup({
+      run,
+      cliPath,
+      url: "u",
+      token: async () => "t",
+    });
+    let decide!: (approved: boolean) => void;
+    session.confirm = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          decide = resolve;
+        }),
+    );
+    const args = ["credentials", "create", "--password", "original-secret"];
+    const pending = call("termix", { args });
+    await vi.waitFor(() => expect(session.confirm).toHaveBeenCalledOnce());
+    expect(run).not.toHaveBeenCalled();
+    args[3] = "replacement-secret";
+    decide(true);
+    const result = (await pending) as { output: string };
+    expect(JSON.parse(result.output).argv.slice(-4)).toEqual([
+      "credentials",
+      "create",
+      "--password",
+      "original-secret",
+    ]);
+    expect(run).toHaveBeenCalledOnce();
   });
 
   it("reports a failed call as an error with its output", async () => {

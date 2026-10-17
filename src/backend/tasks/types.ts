@@ -15,7 +15,7 @@ export interface AiTaskInput {
   title: string;
   /** What to do, in plain language. */
   runbook: string;
-  /** L0 reports, L1 proposes a plan for approval. */
+  /** report is read-only; legacy propose now executes automatically. */
   autonomy: Autonomy;
   /** Already resolved by Automations. */
   hostIds: number[];
@@ -28,6 +28,7 @@ export interface AiTaskInput {
   /** A test run from Automations: forced to report, no notifications. */
   dryRun: boolean;
   deadlineAt: number;
+  onConfirmationWait?: (elapsedMs: number) => void;
   signal?: AbortSignal;
 }
 

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { CliTarget } from "../../../src/backend/ops/cli.js";
 import {
   createTaskTools,
-  parsePlan,
   type TaskToolSession,
 } from "../../../src/backend/tasks/tools.js";
 import type { ToolContext } from "../../../src/backend/tools/types.js";
@@ -33,7 +32,10 @@ const context = {
   userId: "user-1",
   conversationId: 1,
   allowReadOnlyCommands: false,
-  deps: { audit: { record: async () => undefined } },
+  deps: {
+    audit: { record: async () => undefined },
+    hosts: { list: async () => [] },
+  },
 } as unknown as ToolContext;
 
 const cliPath = writeFakeCli();
@@ -57,16 +59,16 @@ const host = {
 };
 
 describe("task tools", () => {
-  it("offers propose_plan only at L1", () => {
+  it("offers direct execution tools without a plan approval tool", () => {
     const names = (autonomy: "report" | "propose") =>
       createTaskTools(session({ autonomy })).map((entry) => entry.name);
     expect(names("report")).not.toContain("propose_plan");
-    expect(names("propose")).toContain("propose_plan");
+    expect(names("propose")).not.toContain("propose_plan");
     expect(names("report")).not.toContain("termix");
   });
 
   it("refuses commands off the read-only allowlist before reaching a host", async () => {
-    const tools = createTaskTools(session());
+    const tools = createTaskTools(session({ autonomy: "report" }));
     for (const command of [
       "docker image prune -f",
       "rm -rf /tmp",
@@ -77,7 +79,9 @@ describe("task tools", () => {
         { command },
         context,
       )) as { error?: string };
-      expect(result.error, command).toMatch(/^Refused/);
+      expect(result.error, command).toMatch(
+        /confirmation is unavailable|needs the ai.ops.use permission/,
+      );
     }
   });
 
@@ -92,26 +96,6 @@ describe("task tools", () => {
       )) as { error?: string };
       expect(result.error).toBe("Time is nearly up. Call submit_report now.");
     }
-  });
-
-  it("records a valid plan and refuses a bad one", async () => {
-    const state = session();
-    const propose = tool(createTaskTools(state), "propose_plan");
-    expect(
-      await propose.handler({ summary: "x", hosts: [host] }, context),
-    ).toMatchObject({ status: "recorded" });
-    expect(state.plan).toEqual([host]);
-
-    const bad = [
-      { ...host, hostId: 9 },
-      { ...host, commands: [] },
-      { ...host, verify: ["rm -rf /"] },
-      { ...host, rollback: "" },
-    ];
-    for (const entry of bad) {
-      expect(parsePlan([entry], [1, 2])).toHaveProperty("error");
-    }
-    expect(parsePlan([host, host], [1, 2])).toHaveProperty("error");
   });
 
   it("takes a report only with the four sections, then ends the run", async () => {
@@ -168,7 +152,9 @@ describe("task tools", () => {
       const result = (await termix.handler({ args }, context)) as {
         error?: string;
       };
-      expect(result.error, args.join(" ")).toMatch(/^Refused/);
+      expect(result.error, args.join(" ")).toMatch(
+        /confirmation is unavailable|needs the ai.ops.use permission/,
+      );
     }
     // Read-only, but still held to the assistant's own blocks.
     const exported = (await termix.handler(

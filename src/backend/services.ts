@@ -81,6 +81,7 @@ interface FleetsAccess {
 }
 
 interface AutomationsAccess {
+  setEnabled?: (id: number, enabled: boolean) => Promise<void>;
   list: () => Promise<
     Array<{
       id: number;

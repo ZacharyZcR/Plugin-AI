@@ -1,3 +1,4 @@
+import type { Confirmations } from "../confirmations/manager.js";
 import { existsSync } from "node:fs";
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
 import { userTokenIssuer } from "../core-api.js";
@@ -15,7 +16,7 @@ import type { ProviderConfig } from "../providers/types.js";
 import type { AiProviderWithSecret, AiRepository } from "../repository.js";
 import type { ToolDeps } from "../tools/types.js";
 import { languageName, reportText } from "./language.js";
-import { APPROVAL_TTL_MS, type TaskLimits } from "./limits.js";
+import { type TaskLimits } from "./limits.js";
 import { notifyOwner } from "./notify.js";
 import { buildTaskSystemPrompt, taskUserMessage } from "./prompt.js";
 import type { TaskRepository, TaskRunRecord } from "./repository.js";
@@ -40,7 +41,14 @@ import type {
  */
 
 export type StopReason =
-  "done" | "budgetRun" | "budgetDaily" | "deadline" | "paused" | "aborted";
+  | "done"
+  | "budgetRun"
+  | "budgetDaily"
+  | "deadline"
+  | "paused"
+  | "aborted"
+  | "unconfirmed"
+  | "confirmationFailed";
 
 /** Stops whatever runs a task: an investigation or an approved plan. */
 export type RunningTasks = Map<number, (reason: StopReason) => void>;
@@ -52,6 +60,7 @@ export interface TaskRunnerDeps {
   modelInfo: ModelInfoCache;
   toolDeps: ToolDeps;
   running: RunningTasks;
+  confirmations?: Confirmations;
 }
 
 /** The longest a run keeps investigating before it must report. */
@@ -156,7 +165,7 @@ export function stoppedReport(
     partial.trim() || reportText(language, "nothingFound"),
     "",
     `## ${reportText(language, "actionsTaken")}`,
-    reportText(language, "noChanges"),
+    reportText(language, "actionsRecorded"),
     "",
     `## ${reportText(language, "recommendations")}`,
     reportText(language, "openConversation"),
@@ -278,8 +287,10 @@ export async function runTask(
   if (input.signal?.aborted) stop("aborted");
   input.signal?.addEventListener("abort", onCallerAbort, { once: true });
   const remaining = Math.max(0, input.deadlineAt - Date.now());
-  const deadlineTimer = setTimeout(() => stop("deadline"), remaining);
-  const wrapUpAt = input.deadlineAt - Math.min(WRAP_UP_MS, remaining * 0.2);
+  let deadlineAt = input.deadlineAt;
+  let deadlineTimer = setTimeout(() => stop("deadline"), remaining);
+  let waitingSince = 0;
+  let wrapUpAt = input.deadlineAt - Math.min(WRAP_UP_MS, remaining * 0.2);
 
   let promptTokens = 0;
   let completionTokens = 0;
@@ -304,6 +315,32 @@ export async function runTask(
   const opsLimits = await readOpsLimits(ctx.settings);
   const cli = ownerCli(ctx, userId, task.id);
   const session: TaskToolSession = {
+    mode: autonomy === "report" ? "report" : "auto",
+    confirm: deps.confirmations?.scoped({
+      userId,
+      conversationId: conversation.id,
+      signal: controller.signal,
+      onExpired: () => stop("unconfirmed"),
+      onUnavailable: () => stop("confirmationFailed"),
+      onCancelled: () => stop("aborted"),
+      onWaiting: (waiting) => {
+        if (waiting) {
+          waitingSince = Date.now();
+          clearTimeout(deadlineTimer);
+        } else if (waitingSince) {
+          const elapsed = Date.now() - waitingSince;
+          waitingSince = 0;
+          deadlineAt += elapsed;
+          wrapUpAt += elapsed;
+          input.onConfirmationWait?.(elapsed);
+          if (!controller.signal.aborted)
+            deadlineTimer = setTimeout(
+              () => stop("deadline"),
+              Math.max(0, deadlineAt - Date.now()),
+            );
+        }
+      },
+    }),
     targets: allowed,
     limits: opsLimits,
     signal: controller.signal,
@@ -418,11 +455,8 @@ export async function runTask(
     severity: outcome.severity,
     summary: outcome.summary,
     report: outcome.report,
-    plan: session.plan,
-    expiresAt:
-      status === "proposed"
-        ? new Date(Date.now() + APPROVAL_TTL_MS).toISOString()
-        : null,
+    plan: null,
+    expiresAt: null,
     finishedAt,
   });
   await repository.appendMessage({
@@ -434,29 +468,16 @@ export async function runTask(
   await notifyOwner(
     ctx,
     task,
-    status === "proposed"
-      ? "proposed"
-      : status === "failed"
-        ? "failed"
-        : "reported",
+    status === "failed" ? "failed" : "reported",
     outcome.summary,
     outcome.severity,
     language,
   );
-  return taskResult(
-    status === "proposed"
-      ? "proposed"
-      : status === "failed"
-        ? "failed"
-        : "reported",
-    task.id,
-    outcome.summary,
-    outcome.severity,
-  );
+  return taskResult(status, task.id, outcome.summary, outcome.severity);
 }
 
 interface Outcome {
-  status: "reported" | "proposed" | "failed";
+  status: "reported" | "failed";
   severity: Severity;
   summary: string;
   report: string;
@@ -473,15 +494,17 @@ function settle(
 ): Outcome {
   if (session.report) {
     return {
-      status:
-        session.autonomy === "propose" && session.plan
-          ? "proposed"
-          : "reported",
+      status: "reported",
       ...session.report,
     };
   }
   if (stopReason && stopReason !== "done") {
-    const summary = reportText(language, STOP_KEYS[stopReason], values);
+    const summary =
+      stopReason === "unconfirmed"
+        ? reportText(language, "confirmationExpired")
+        : stopReason === "confirmationFailed"
+          ? reportText(language, "confirmationFailed")
+          : reportText(language, STOP_KEYS[stopReason], values);
     return {
       status: "failed",
       severity: "warning",

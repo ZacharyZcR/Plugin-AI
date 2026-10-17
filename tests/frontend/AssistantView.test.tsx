@@ -388,7 +388,8 @@ it("opens the usage view from the header", async () => {
 it("switches to Auto-ops for a user with a shell on hosts only", async () => {
   await ready();
   fireEvent.click(screen.getByText("autoOps.viewAutoOps"));
-  expect(await screen.findByText("autoOps.sections.approvals")).toBeTruthy();
+  expect(await screen.findByText("autoOps.sections.tasks")).toBeTruthy();
+  expect(screen.queryByText("autoOps.sections.approvals")).toBeNull();
   cleanup();
 
   assistant.setHostShell(false);

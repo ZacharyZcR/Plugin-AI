@@ -1,10 +1,8 @@
 import type { Request, Response, Router } from "express";
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
 import { createAiGate } from "../gating.js";
-import { readOpsLimits } from "../ops/routes.js";
 import type { AiRepository } from "../repository.js";
 import { readService, requireService, SERVICE } from "../services.js";
-import { executePlan } from "./execute.js";
 import { automationName, ownerLanguage, presetTitle } from "./language.js";
 import { PREFERENCES_KEY, readPreferences, readTaskLimits } from "./limits.js";
 import {
@@ -64,6 +62,7 @@ export interface TaskRouteDeps {
   tasks: TaskRepository;
   toolDeps: ToolDeps;
   running: RunningTasks;
+  seedPresets?: (userId: string) => Promise<void>;
 }
 
 export function registerTaskRoutes(
@@ -220,13 +219,47 @@ export function registerTaskRoutes(
    *       403:
    *         description: Missing ai.ops.use, or the assistant is off.
    */
+  router.post(
+    "/tasks/presets/initialize",
+    opsOnly,
+    async (_req, res: Response) => {
+      await deps.seedPresets?.(actor());
+      res.json({ ok: true });
+    },
+  );
+  router.post(
+    "/tasks/presets/automations/:id/state",
+    opsOnly,
+    async (req, res: Response) => {
+      if (typeof req.body?.enabled !== "boolean") return res.sendStatus(400);
+      const id = Number(req.params.id);
+      if (
+        !(await tasks.presetLinks(actor())).some(
+          (link) => link.automationId === id,
+        )
+      )
+        return res.sendStatus(404);
+      const access = requireService(ctx.services, SERVICE.automations);
+      if (!access.setEnabled)
+        return res
+          .status(503)
+          .json({ error: "Update Automations to support preset toggles" });
+      await access.setEnabled(id, req.body.enabled);
+      res.json({ ok: true });
+    },
+  );
   router.get("/tasks/presets", opsOnly, async (_req, res: Response) => {
     const userId = actor();
     const automationsAvailable =
       ctx.services.providers(SERVICE.automations).length > 0;
     const enabled = new Map<
       string,
-      Array<{ automationId: number; version: number; name: string }>
+      Array<{
+        automationId: number;
+        version: number;
+        name: string;
+        active: boolean;
+      }>
     >();
     if (automationsAvailable) {
       for (const link of await tasks.presetLinks(userId)) {
@@ -235,16 +268,14 @@ export function registerTaskRoutes(
           SERVICE.automations,
           (access) => access.get(link.automationId),
         );
-        // Deleted in Automations: the preset is no longer enabled.
-        if (!automation) {
-          await tasks.unlinkPreset(link.id);
-          continue;
-        }
+        // Retain the provisioning marker after deletion so the seeder cannot recreate it.
+        if (!automation) continue;
         const list = enabled.get(link.presetId) ?? [];
         list.push({
           automationId: link.automationId,
           version: link.presetVersion,
           name: automation.name,
+          active: automation.enabled,
         });
         enabled.set(link.presetId, list);
       }
@@ -555,7 +586,7 @@ export function registerTaskRoutes(
         hostNames: Object.fromEntries(
           task.hostIds.map((id) => [id, names.get(id) ?? `#${id}`]),
         ),
-        canDecide: task.status === "proposed",
+        canDecide: false,
       },
     });
   });
@@ -579,12 +610,11 @@ export function registerTaskRoutes(
    * @openapi
    * /plugin-api/ai/tasks/{id}/approve:
    *   post:
-   *     summary: Approve a proposed plan and run it
+   *     summary: Retired plan approval endpoint
    *     description: >
-   *       The owner, or a holder of ai.ops.use who can connect to every host
-   *       in the plan, may approve. The plan then runs as the owner, verbatim,
-   *       per host in order, stopping a host at its first failure, then its
-   *       verify commands. Answers at once; poll the task for progress.
+   *       Plan approval has been replaced by automatic execution with command
+   *       confirmations. Start a new task to use the current execution flow.
+   *     deprecated: true
    *     tags:
    *       - AI
    *     parameters:
@@ -594,85 +624,14 @@ export function registerTaskRoutes(
    *         schema:
    *           type: integer
    *     responses:
-   *       202:
-   *         description: Approved; the plan is running.
-   *       403:
-   *         description: Not allowed to decide on this plan.
-   *       404:
-   *         description: Task not found.
-   *       409:
-   *         description: >
-   *           Not waiting for a decision, expired, or auto-ops is paused.
+   *       410:
+   *         description: Plan approval is no longer available.
    */
-  router.post("/tasks/:id/approve", async (req: Request, res: Response) => {
-    const task = await visibleTask(req.params.id);
-    if (!task) return res.status(404).json({ error: "Task not found" });
-    const refusal = await decisionRefusal(task);
-    if (refusal) return res.status(403).json({ error: refusal });
-    if (task.status !== "proposed" || !task.plan?.length) {
-      return res
-        .status(409)
-        .json({ error: "This plan is not waiting for a decision" });
-    }
-    const now = new Date();
-    if (task.expiresAt && Date.parse(task.expiresAt) <= now.getTime()) {
-      await tasks.transition(task.id, ["proposed"], {
-        status: "expired",
-        finishedAt: now.toISOString(),
-      });
-      return res.status(409).json({ error: "This plan has expired" });
-    }
-    // The plan must still be what was proposed: hosts of this task only.
-    if (
-      task.plan.some(
-        (host) => !task.hostIds.includes(host.hostId) || !host.commands.length,
-      )
-    ) {
-      return res.status(409).json({ error: "This plan is no longer valid" });
-    }
-    if ((await readTaskLimits(ctx.settings)).paused) {
-      return res.status(409).json({ error: "AI auto-ops is paused" });
-    }
-    const approved = await tasks.transition(task.id, ["proposed"], {
-      status: "approved",
-      decidedBy: actor(),
-      decidedAt: now.toISOString(),
+  router.post("/tasks/:id/approve", async (_req: Request, res: Response) => {
+    res.status(410).json({
+      error:
+        "Plan approval has been replaced by automatic execution with command confirmations. Run the task again.",
     });
-    if (!approved) {
-      return res
-        .status(409)
-        .json({ error: "This plan is not waiting for a decision" });
-    }
-    await tasks.transition(task.id, ["approved"], { status: "executing" });
-    const current = (await tasks.findRun(task.id)) as TaskRunRecord;
-    const limits = await readOpsLimits(ctx.settings);
-    const language = await ownerLanguage(ctx, task.userId);
-    void ctx
-      .asUser(task.userId, () =>
-        executePlan(
-          {
-            ctx,
-            toolDeps: deps.toolDeps,
-            repository: deps.repository,
-            tasks,
-            running: deps.running,
-          },
-          current,
-          limits,
-          language,
-        ),
-      )
-      .catch(async (error) => {
-        logError("Running an approved AI plan failed", error);
-        await tasks
-          .updateRun(task.id, {
-            status: "failed",
-            summary: "The plan could not be run.",
-            finishedAt: new Date().toISOString(),
-          })
-          .catch(() => undefined);
-      });
-    res.status(202).json({ status: "executing" });
   });
 
   /**
